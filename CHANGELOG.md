@@ -12,6 +12,7 @@
 - Stats opt-in via `COPILOT2API_STATS_ENABLED=true` env var (default: disabled). When disabled, stats recording, dashboard, and usage endpoints are inactive
 - Stats directory configurable via `COPILOT2API_STATS_DIR` env var (default: `~/.config/copilot2api/stats`)
 - Dynamic model pricing: fetches LiteLLM pricing JSON on startup and daily at 3:00 AM UTC, cached to disk. Supports fuzzy model name matching (provider prefixes, version normalization, suffix stripping)
+- Add built-in API pricing for the GPT-5.6 series (`gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`) so dashboard cost estimates remain available with stale or unavailable LiteLLM pricing data
 - Dashboard: multi-select dimensions (By Model + By Account), month/quarter range pickers, manual refresh button, configurable auto-refresh (off/1m/2m/5m/30m/1h) stored in localStorage
 - Dashboard: API key required for usage data (stored in localStorage), bar top labels with overlap avoidance, bottom dimension labels at 60°
 

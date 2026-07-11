@@ -17,34 +17,64 @@ const (
 	pricingCacheFile  = "pricing_cache.json"
 )
 
+var builtinPricing = map[string]ModelPricing{
+	"gpt-5.6": {
+		InputCostPerToken:     5.0 / 1_000_000,
+		CacheReadCostPerToken: 0.5 / 1_000_000,
+		OutputCostPerToken:    30.0 / 1_000_000,
+	},
+	"gpt-5.6-sol": {
+		InputCostPerToken:     5.0 / 1_000_000,
+		CacheReadCostPerToken: 0.5 / 1_000_000,
+		OutputCostPerToken:    30.0 / 1_000_000,
+	},
+	"gpt-5.6-terra": {
+		InputCostPerToken:     2.5 / 1_000_000,
+		CacheReadCostPerToken: 0.25 / 1_000_000,
+		OutputCostPerToken:    15.0 / 1_000_000,
+	},
+	"gpt-5.6-luna": {
+		InputCostPerToken:     1.0 / 1_000_000,
+		CacheReadCostPerToken: 0.1 / 1_000_000,
+		OutputCostPerToken:    6.0 / 1_000_000,
+	},
+}
+
 // ModelPricing holds per-token costs for a model.
 type ModelPricing struct {
-	InputCostPerToken      float64 `json:"input_cost_per_token"`
-	OutputCostPerToken     float64 `json:"output_cost_per_token"`
-	CacheReadCostPerToken  float64 `json:"cache_read_input_token_cost,omitempty"`
+	InputCostPerToken     float64 `json:"input_cost_per_token"`
+	OutputCostPerToken    float64 `json:"output_cost_per_token"`
+	CacheReadCostPerToken float64 `json:"cache_read_input_token_cost,omitempty"`
 }
 
 // PricingCache manages the cached LiteLLM pricing data.
 type PricingCache struct {
-	dir    string
-	mu     sync.RWMutex
-	data   map[string]json.RawMessage
-	done   chan struct{}
+	dir  string
+	mu   sync.RWMutex
+	data map[string]json.RawMessage
+	done chan struct{}
 }
 
 // NewPricingCache creates a new pricing cache, fetches immediately, and starts daily refresh.
 func NewPricingCache(statsDir string) *PricingCache {
-	pc := &PricingCache{
-		dir:  statsDir,
-		done: make(chan struct{}),
-	}
-	// Load existing cache from disk first
-	pc.loadFromDisk()
+	pc := newPricingCache(statsDir)
 	// Fetch fresh data in background
 	go func() {
 		pc.fetch()
 		pc.scheduleDaily()
 	}()
+	return pc
+}
+
+func newPricingCache(statsDir string) *PricingCache {
+	pc := &PricingCache{
+		dir:  statsDir,
+		data: make(map[string]json.RawMessage),
+		done: make(chan struct{}),
+	}
+	applyBuiltinPricing(pc.data)
+	// Load existing cache from disk first
+	pc.loadFromDisk()
 	return pc
 }
 
@@ -63,6 +93,7 @@ func (pc *PricingCache) loadFromDisk() {
 	}
 	var parsed map[string]json.RawMessage
 	if json.Unmarshal(data, &parsed) == nil {
+		applyBuiltinPricing(parsed)
 		pc.mu.Lock()
 		pc.data = parsed
 		pc.mu.Unlock()
@@ -96,6 +127,7 @@ func (pc *PricingCache) fetch() {
 		slog.Warn("invalid LiteLLM pricing JSON", "error", err)
 		return
 	}
+	applyBuiltinPricing(parsed)
 
 	// Write to disk
 	if err := os.MkdirAll(pc.dir, 0o755); err != nil {
@@ -111,6 +143,21 @@ func (pc *PricingCache) fetch() {
 	pc.data = parsed
 	pc.mu.Unlock()
 	slog.Info("updated pricing cache", "models", len(parsed))
+}
+
+func applyBuiltinPricing(data map[string]json.RawMessage) {
+	for model, pricing := range builtinPricing {
+		entry := make(map[string]any)
+		if raw, ok := data[model]; ok {
+			_ = json.Unmarshal(raw, &entry)
+		}
+		entry["input_cost_per_token"] = pricing.InputCostPerToken
+		entry["cache_read_input_token_cost"] = pricing.CacheReadCostPerToken
+		entry["output_cost_per_token"] = pricing.OutputCostPerToken
+		if raw, err := json.Marshal(entry); err == nil {
+			data[model] = raw
+		}
+	}
 }
 
 func (pc *PricingCache) scheduleDaily() {

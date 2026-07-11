@@ -92,17 +92,19 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Generate tags
         id: tags
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
         run: |
           DATETIME=$(date -u +%Y%m%d%H%M)
           BRANCH=${GITHUB_REF_NAME}
           SHA=$(echo "$GITHUB_SHA" | cut -c1-8)
           TAG="${DATETIME}-${BRANCH}-${SHA}"
-          TAGS="ghcr.io/senorsen/copilot2api:${TAG}"
+          TAGS="${IMAGE_NAME,,}:${TAG}"
           if [ "$BRANCH" = "main" ] || [ "${{ github.event_name }}" = "release" ]; then
-            TAGS="${TAGS},ghcr.io/senorsen/copilot2api:latest"
+            TAGS="${TAGS},${IMAGE_NAME,,}:latest"
           fi
           if [ "${{ github.event_name }}" = "release" ]; then
-            TAGS="${TAGS},ghcr.io/senorsen/copilot2api:${{ github.ref_name }}"
+            TAGS="${TAGS},${IMAGE_NAME,,}:${{ github.ref_name }}"
           fi
           echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6

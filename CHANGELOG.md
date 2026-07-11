@@ -22,6 +22,7 @@
 ### Bug Fixes
 
 - Serve the dashboard's Chart.js dependency from the embedded control server assets so offline or restricted workstations do not need CDN access
+- Publish Docker images to the current GitHub repository's container package instead of the previous owner's package
 
 ## [0.3.1] - 2026-04-26
 

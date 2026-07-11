@@ -45,10 +45,11 @@ func NewHandler(tokenProvider upstream.TokenProvider, transport *http.Transport,
 
 // proxyTokenUsage holds token statistics for a proxy request.
 type proxyTokenUsage struct {
-	In     int // prompt_tokens (includes cached)
-	Cached int // prompt_tokens_details.cached_tokens
-	Out    int // completion_tokens
-	Total  int // total_tokens
+	In              int    // prompt_tokens (includes cached)
+	Cached          int    // prompt_tokens_details.cached_tokens
+	Out             int    // completion_tokens
+	Total           int    // total_tokens
+	ReasoningEffort string // normalized client-requested reasoning effort
 }
 
 // accountInfo returns account_id and username for this handler's token provider.
@@ -95,17 +96,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.Info(logMsg, attrs...)
 		if h.StatsRecorder != nil && usage.Total > 0 {
 			h.StatsRecorder.Record(stats.Entry{
-				Timestamp:    time.Now(),
-				AccountID:    accountID,
-				Username:     username,
-				Model:        requestModel,
-				Endpoint:     endpoint,
-				Route:        "proxy",
-				TokensIn:     usage.In,
-				TokensOut:    usage.Out,
-				TokensCached: usage.Cached,
-				TokensTotal:  usage.Total,
-				DurationMs:   time.Since(start).Milliseconds(),
+				Timestamp:       time.Now(),
+				AccountID:       accountID,
+				Username:        username,
+				Model:           requestModel,
+				Endpoint:        endpoint,
+				Route:           "proxy",
+				ReasoningEffort: usage.ReasoningEffort,
+				TokensIn:        usage.In,
+				TokensOut:       usage.Out,
+				TokensCached:    usage.Cached,
+				TokensTotal:     usage.Total,
+				DurationMs:      time.Since(start).Milliseconds(),
 			})
 		}
 	}()
@@ -167,6 +169,9 @@ func (h *Handler) handlePassthrough(w http.ResponseWriter, r *http.Request, endp
 
 	if modelOut != nil && len(bodyBytes) > 0 {
 		*modelOut = extractModelField(bodyBytes)
+	}
+	if usage != nil {
+		usage.ReasoningEffort = extractReasoningEffort(endpoint, bodyBytes)
 	}
 
 	// Debug capture: save request body for configured models
@@ -306,6 +311,35 @@ func extractModelField(body []byte) string {
 		return ""
 	}
 	return top.Model
+}
+
+// extractReasoningEffort returns the normalized effort requested by the
+// client. Chat Completions' explicit effort takes precedence over its legacy
+// thinking budget; Responses requests carry effort under reasoning.effort.
+func extractReasoningEffort(endpoint string, body []byte) string {
+	switch endpoint {
+	case "/chat/completions":
+		var req struct {
+			ReasoningEffort string `json:"reasoning_effort"`
+			ThinkingBudget  *int   `json:"thinking_budget"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			return stats.ClassifyReasoningEffort("", nil)
+		}
+		return stats.ClassifyReasoningEffort(req.ReasoningEffort, req.ThinkingBudget)
+	case "/responses":
+		var req struct {
+			Reasoning *struct {
+				Effort string `json:"effort"`
+			} `json:"reasoning"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil || req.Reasoning == nil {
+			return stats.ClassifyReasoningEffort("", nil)
+		}
+		return stats.ClassifyReasoningEffort(req.Reasoning.Effort, nil)
+	default:
+		return stats.ClassifyReasoningEffort("", nil)
+	}
 }
 
 // setUpstreamModelHeader records the real upstream model id on a non-standard

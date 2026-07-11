@@ -7,23 +7,24 @@ import (
 
 // OpenAI Chat Completions types (used for conversion)
 type OpenAIChatCompletionsRequest struct {
-	Model             string                     `json:"model"`
-	Messages          []OpenAIMessage            `json:"messages"`
-	Tools             []OpenAIToolDefinition     `json:"tools,omitempty"`
-	ToolChoice        interface{}                `json:"tool_choice,omitempty"` // string or object
-	ParallelToolCalls *bool                      `json:"parallel_tool_calls,omitempty"`
-	Temperature       *float64                   `json:"temperature,omitempty"`
-	TopP              *float64                   `json:"top_p,omitempty"`
-	MaxTokens         *int                       `json:"max_tokens,omitempty"`
-	Stop              interface{}                `json:"stop,omitempty"` // string or []string
-	Stream            bool                       `json:"stream,omitempty"`
-	StreamOptions     *OpenAIStreamOptions       `json:"stream_options,omitempty"`
-	User              string                     `json:"user,omitempty"`
-	Metadata          map[string]string          `json:"metadata,omitempty"`
-	ThinkingBudget    *int                       `json:"thinking_budget,omitempty"`
-	ReasoningText     *string                    `json:"reasoning_text,omitempty"`
-	ReasoningOpaque   *string                    `json:"reasoning_opaque,omitempty"`
-	ResponseFormat    *ResponseFormat            `json:"response_format,omitempty"`
+	Model             string                 `json:"model"`
+	Messages          []OpenAIMessage        `json:"messages"`
+	Tools             []OpenAIToolDefinition `json:"tools,omitempty"`
+	ToolChoice        interface{}            `json:"tool_choice,omitempty"` // string or object
+	ParallelToolCalls *bool                  `json:"parallel_tool_calls,omitempty"`
+	Temperature       *float64               `json:"temperature,omitempty"`
+	TopP              *float64               `json:"top_p,omitempty"`
+	MaxTokens         *int                   `json:"max_tokens,omitempty"`
+	Stop              interface{}            `json:"stop,omitempty"` // string or []string
+	Stream            bool                   `json:"stream,omitempty"`
+	StreamOptions     *OpenAIStreamOptions   `json:"stream_options,omitempty"`
+	User              string                 `json:"user,omitempty"`
+	Metadata          map[string]string      `json:"metadata,omitempty"`
+	ReasoningEffort   string                 `json:"reasoning_effort,omitempty"`
+	ThinkingBudget    *int                   `json:"thinking_budget,omitempty"`
+	ReasoningText     *string                `json:"reasoning_text,omitempty"`
+	ReasoningOpaque   *string                `json:"reasoning_opaque,omitempty"`
+	ResponseFormat    *ResponseFormat        `json:"response_format,omitempty"`
 }
 
 // OpenAIStreamOptions controls streaming behavior options.
@@ -32,14 +33,14 @@ type OpenAIStreamOptions struct {
 }
 
 type OpenAIMessage struct {
-	Role           string              `json:"role"` // "system", "user", "assistant", "tool"
-	Content        *OpenAIContent      `json:"content,omitempty"`
-	Name           string              `json:"name,omitempty"`
-	ToolCalls      []OpenAIToolCall    `json:"tool_calls,omitempty"`
-	ToolCallID     string              `json:"tool_call_id,omitempty"`
-	ReasoningText   *string             `json:"reasoning_text,omitempty"`
-	ReasoningOpaque *string             `json:"reasoning_opaque,omitempty"`
-	ReasoningItems  []ReasoningItem     `json:"reasoning_items,omitempty"`
+	Role            string           `json:"role"` // "system", "user", "assistant", "tool"
+	Content         *OpenAIContent   `json:"content,omitempty"`
+	Name            string           `json:"name,omitempty"`
+	ToolCalls       []OpenAIToolCall `json:"tool_calls,omitempty"`
+	ToolCallID      string           `json:"tool_call_id,omitempty"`
+	ReasoningText   *string          `json:"reasoning_text,omitempty"`
+	ReasoningOpaque *string          `json:"reasoning_opaque,omitempty"`
+	ReasoningItems  []ReasoningItem  `json:"reasoning_items,omitempty"`
 }
 
 // OpenAIContent can be string or []OpenAIContentPart
@@ -79,9 +80,9 @@ func (c *OpenAIContent) UnmarshalJSON(data []byte) error {
 }
 
 type OpenAIContentPart struct {
-	Type     string                    `json:"type"` // "text", "image_url"
-	Text     string                    `json:"text,omitempty"`
-	ImageURL *OpenAIImageURLPayload    `json:"image_url,omitempty"`
+	Type     string                 `json:"type"` // "text", "image_url"
+	Text     string                 `json:"text,omitempty"`
+	ImageURL *OpenAIImageURLPayload `json:"image_url,omitempty"`
 }
 
 type OpenAIImageURLPayload struct {
@@ -90,8 +91,8 @@ type OpenAIImageURLPayload struct {
 }
 
 type OpenAIToolDefinition struct {
-	Type     string              `json:"type"` // "function"
-	Function OpenAIFunctionSpec  `json:"function"`
+	Type     string             `json:"type"` // "function"
+	Function OpenAIFunctionSpec `json:"function"`
 }
 
 type OpenAIFunctionSpec struct {
@@ -101,10 +102,10 @@ type OpenAIFunctionSpec struct {
 }
 
 type OpenAIToolCall struct {
-	ID       string                  `json:"id"`
-	Type     string                  `json:"type"` // "function"
+	ID       string                 `json:"id"`
+	Type     string                 `json:"type"` // "function"
 	Function OpenAIToolCallFunction `json:"function"`
-	Index    *int                    `json:"index,omitempty"` // for streaming
+	Index    *int                   `json:"index,omitempty"` // for streaming
 }
 
 type OpenAIToolCallFunction struct {
@@ -134,13 +135,13 @@ type ReasoningSummary struct {
 
 // OpenAI Response types
 type OpenAIChatCompletionsResponse struct {
-	ID                string           `json:"id"`
-	Object            string           `json:"object"` // "chat.completion"
-	Created           int64            `json:"created"`
-	Model             string           `json:"model"`
-	Choices           []OpenAIChoice   `json:"choices"`
-	Usage             *OpenAIUsage     `json:"usage,omitempty"`
-	SystemFingerprint string           `json:"system_fingerprint,omitempty"`
+	ID                string         `json:"id"`
+	Object            string         `json:"object"` // "chat.completion"
+	Created           int64          `json:"created"`
+	Model             string         `json:"model"`
+	Choices           []OpenAIChoice `json:"choices"`
+	Usage             *OpenAIUsage   `json:"usage,omitempty"`
+	SystemFingerprint string         `json:"system_fingerprint,omitempty"`
 }
 
 type OpenAIChoice struct {
@@ -150,11 +151,11 @@ type OpenAIChoice struct {
 }
 
 type OpenAIUsage struct {
-	PromptTokens            int                              `json:"prompt_tokens"`
-	CompletionTokens        int                              `json:"completion_tokens"`
-	TotalTokens             int                              `json:"total_tokens"`
-	PromptTokensDetails     *OpenAIPromptTokensDetails       `json:"prompt_tokens_details,omitempty"`
-	CompletionTokensDetails *OpenAICompletionTokensDetails   `json:"completion_tokens_details,omitempty"`
+	PromptTokens            int                            `json:"prompt_tokens"`
+	CompletionTokens        int                            `json:"completion_tokens"`
+	TotalTokens             int                            `json:"total_tokens"`
+	PromptTokensDetails     *OpenAIPromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
+	CompletionTokensDetails *OpenAICompletionTokensDetails `json:"completion_tokens_details,omitempty"`
 }
 
 type OpenAIPromptTokensDetails struct {

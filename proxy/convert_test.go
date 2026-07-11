@@ -219,6 +219,37 @@ func TestConvertChatToResponsesRequest_ThinkingBudget(t *testing.T) {
 	}
 }
 
+func TestConvertChatToResponsesRequest_ReasoningEffortPrecedence(t *testing.T) {
+	lowBudget := 1
+	tests := []struct {
+		name     string
+		explicit string
+		budget   *int
+		want     string
+	}{
+		{name: "explicit effort", explicit: "xhigh", want: "xhigh"},
+		{name: "arbitrary explicit effort", explicit: " Custom-Tier ", want: "custom-tier"},
+		{name: "explicit overrides budget", explicit: "minimal", budget: &lowBudget, want: "minimal"},
+		{name: "budget fallback", budget: &lowBudget, want: "low"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ConvertChatToResponsesRequest(types.OpenAIChatCompletionsRequest{
+				Model:           "gpt-5",
+				ReasoningEffort: tt.explicit,
+				ThinkingBudget:  tt.budget,
+			})
+			if result.Reasoning == nil {
+				t.Fatal("Reasoning should not be nil")
+			}
+			if result.Reasoning.Effort != tt.want {
+				t.Errorf("Effort = %q, want %q", result.Reasoning.Effort, tt.want)
+			}
+		})
+	}
+}
+
 func TestConvertChatToResponsesRequest_UserMultipartContent(t *testing.T) {
 	req := types.OpenAIChatCompletionsRequest{
 		Model: "gpt-4",
@@ -1327,9 +1358,9 @@ func TestMapResponsesStatusToFinishReason(t *testing.T) {
 
 func TestMapChatFinishReasonToResponsesStatus(t *testing.T) {
 	tests := []struct {
-		name   string
-		resp   types.OpenAIChatCompletionsResponse
-		want   string
+		name string
+		resp types.OpenAIChatCompletionsResponse
+		want string
 	}{
 		{"empty choices", types.OpenAIChatCompletionsResponse{}, "completed"},
 		{"stop", types.OpenAIChatCompletionsResponse{

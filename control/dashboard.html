@@ -42,8 +42,11 @@ canvas { width: 100% !important; }
 <script>
 const app = document.getElementById('app');
 let chart = null;
-let currentRange = localStorage.getItem('c2a_range') || 30, currentAggr = localStorage.getItem('c2a_aggr') || 'day', currentDims = JSON.parse(localStorage.getItem('c2a_dims') || '{"model":false,"account":false}'), currentTokenView = 'all';
-let filterModel = localStorage.getItem('c2a_filterModel') || '', filterAccount = localStorage.getItem('c2a_filterAccount') || '';
+const defaultDims = { model: false, account: false, reasoningEffort: false };
+let savedDims = {};
+try { savedDims = JSON.parse(localStorage.getItem('c2a_dims') || '{}') || {}; } catch (_) {}
+let currentRange = localStorage.getItem('c2a_range') || 30, currentAggr = localStorage.getItem('c2a_aggr') || 'day', currentDims = { ...defaultDims, ...savedDims }, currentTokenView = 'all';
+let filterModel = localStorage.getItem('c2a_filterModel') || '', filterAccount = localStorage.getItem('c2a_filterAccount') || '', filterReasoningEffort = localStorage.getItem('c2a_filterReasoningEffort') || '';
 let rawData = [];
 
 async function showDashboard() {
@@ -74,11 +77,12 @@ async function showDashboard() {
 </div>
 <div class="controls">
   <span class="lbl">Dimension:</span>
-  <button class="btn dim" data-dim="model">By Model</button><button class="btn dim" data-dim="account">By Account</button><button class="btn dim active" data-dim="aggr">Aggregated</button>
+  <button class="btn dim" data-dim="model">By Model</button><button class="btn dim" data-dim="account">By Account</button><button class="btn dim" data-dim="reasoningEffort">By Reasoning Effort</button><button class="btn dim active" data-dim="aggr">Aggregated</button>
   <div class="sep"></div>
   <span class="lbl">Filter:</span>
   <select id="fModel"><option value="">All Models</option></select>
   <select id="fAccount"><option value="">All Accounts</option></select>
+  <select id="fReasoningEffort"><option value="">All Efforts</option></select>
   <div class="sep"></div>
   <span id="cards-subtitle" style="font-size:0.85rem;color:var(--muted)"></span>
 </div>
@@ -114,15 +118,15 @@ async function showDashboard() {
   document.querySelectorAll('.dim').forEach(b => b.onclick = () => {
     const dim = b.dataset.dim;
     if (dim === 'aggr') {
-      currentDims = { model: false, account: false };
+      currentDims = { ...defaultDims };
       document.querySelectorAll('.dim').forEach(x => x.classList.remove('active'));
       b.classList.add('active');
     } else {
       document.querySelector('.dim[data-dim="aggr"]').classList.remove('active');
       currentDims[dim] = !currentDims[dim];
       b.classList.toggle('active');
-      if (!currentDims.model && !currentDims.account) {
-        currentDims = { model: false, account: false };
+      if (!currentDims.model && !currentDims.account && !currentDims.reasoningEffort) {
+        currentDims = { ...defaultDims };
         document.querySelector('.dim[data-dim="aggr"]').classList.add('active');
       }
     }
@@ -131,6 +135,7 @@ async function showDashboard() {
   });
   document.getElementById('fModel').onchange = e => { filterModel = e.target.value; localStorage.setItem('c2a_filterModel', filterModel); render(); };
   document.getElementById('fAccount').onchange = e => { filterAccount = e.target.value; localStorage.setItem('c2a_filterAccount', filterAccount); render(); };
+  document.getElementById('fReasoningEffort').onchange = e => { filterReasoningEffort = e.target.value; localStorage.setItem('c2a_filterReasoningEffort', filterReasoningEffort); render(); };
 
   // Restore saved Range button/picker
   const savedRange = String(currentRange);
@@ -144,10 +149,11 @@ async function showDashboard() {
   // Restore saved Group button
   document.querySelectorAll('.aggr').forEach(b => { if (b.dataset.a === currentAggr) { b.classList.add('active2'); } else { b.classList.remove('active2'); } });
   // Restore saved Dimension buttons
-  if (currentDims.model || currentDims.account) {
+  if (currentDims.model || currentDims.account || currentDims.reasoningEffort) {
     document.querySelector('.dim[data-dim="aggr"]').classList.remove('active');
     if (currentDims.model) document.querySelector('.dim[data-dim="model"]').classList.add('active');
     if (currentDims.account) document.querySelector('.dim[data-dim="account"]').classList.add('active');
+    if (currentDims.reasoningEffort) document.querySelector('.dim[data-dim="reasoningEffort"]').classList.add('active');
   }
   document.getElementById('apiToken').onchange = e => { localStorage.setItem('c2a_token', e.target.value); fetchPricing(); fetchData(); };
 
@@ -287,19 +293,29 @@ async function fetchData() {
 }
 
 function populateFilters() {
-  const models = new Set(), accounts = new Set();
-  rawData.forEach(d => { models.add(d.model); accounts.add(d.username || d.account_id); });
-  const fM = document.getElementById('fModel'), fA = document.getElementById('fAccount');
-  const prevM = filterModel, prevA = filterAccount;
-  fM.innerHTML = '<option value="">All Models</option>' + [...models].sort().map(m => `<option value="${m}">${m}</option>`).join('');
-  fA.innerHTML = '<option value="">All Accounts</option>' + [...accounts].sort().map(a => `<option value="${a}">${a}</option>`).join('');
-  fM.value = prevM || filterModel; fA.value = prevA || filterAccount;
+  const models = new Set(), accounts = new Set(), reasoningEfforts = new Set();
+  rawData.forEach(d => { models.add(d.model); accounts.add(d.username || d.account_id); reasoningEfforts.add(reasoningEffortValue(d)); });
+  const fM = document.getElementById('fModel'), fA = document.getElementById('fAccount'), fR = document.getElementById('fReasoningEffort');
+  const prevM = filterModel, prevA = filterAccount, prevR = filterReasoningEffort;
+  populateFilterOptions(fM, 'All Models', models);
+  populateFilterOptions(fA, 'All Accounts', accounts);
+  populateFilterOptions(fR, 'All Efforts', reasoningEfforts, reasoningEffortLabel);
+  fM.value = prevM || filterModel; fA.value = prevA || filterAccount; fR.value = prevR || filterReasoningEffort;
 }
+
+function populateFilterOptions(select, allLabel, values, label = value => value) {
+  select.replaceChildren(new Option(allLabel, ''));
+  [...values].sort().forEach(value => select.add(new Option(label(value), value)));
+}
+
+function reasoningEffortValue(d) { return d.reasoning_effort || 'unspecified'; }
+function reasoningEffortLabel(effort) { return effort === 'unspecified' ? 'Unspecified' : effort; }
 
 function filtered() {
   return rawData.filter(d => {
     if (filterModel && d.model !== filterModel) return false;
     if (filterAccount && (d.username || d.account_id) !== filterAccount) return false;
+    if (filterReasoningEffort && reasoningEffortValue(d) !== filterReasoningEffort) return false;
     return true;
   });
 }
@@ -356,6 +372,7 @@ function renderChart(data) {
     const parts = [];
     if (currentDims.model) parts.push(d.model);
     if (currentDims.account) parts.push(d.username || d.account_id);
+    if (currentDims.reasoningEffort) parts.push(reasoningEffortLabel(reasoningEffortValue(d)));
     k = parts.length ? parts.join(' / ') : 'total';
     dims.add(k);
     if (!byBucket[bucket]) byBucket[bucket] = {};

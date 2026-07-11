@@ -260,13 +260,13 @@ Enable with `COPILOT2API_STATS_ENABLED=true`. Records per-request token usage to
 GET /dashboard
 ```
 
-Interactive HTML dashboard with stacked bar charts, estimated costs (via LiteLLM pricing data), time range selectors, model/account filters, and auto-refresh. Requires `ADMIN_TOKEN` entered in the UI (stored in localStorage).
+Interactive HTML dashboard with stacked bar charts, estimated costs (via LiteLLM pricing data), time range selectors, combinable model/account/reasoning-effort dimensions and filters, and auto-refresh. Requires `ADMIN_TOKEN` entered in the UI (stored in localStorage).
 
 ```
-GET /usage?start=YYYY-MM-DD&end=YYYY-MM-DD[&account_id=...][&model=...]
+GET /usage?start=YYYY-MM-DD&end=YYYY-MM-DD[&account_id=...][&model=...][&reasoning_effort=...]
 ```
 
-Returns aggregated daily token stats (input, output, cached) per model/account. Requires `ADMIN_TOKEN` via `Authorization: Bearer` header.
+Returns aggregated daily token stats (input, output, cached) per model/account/reasoning effort. Reasoning effort is the client-requested value when provided explicitly, or a classification derived from a supplied thinking budget; requests without either are reported as `unspecified`. Usage stats cover recorded OpenAI-compatible and Anthropic traffic; native Gemini traffic is not currently recorded. Requires `ADMIN_TOKEN` via `Authorization: Bearer` header.
 
 ```
 GET /usage/accounts

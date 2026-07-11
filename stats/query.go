@@ -12,16 +12,17 @@ import (
 
 // AggregatedEntry is a daily summary returned by the query API.
 type AggregatedEntry struct {
-	Date         string `json:"date"`
-	AccountID    string `json:"account_id"`
-	Username     string `json:"username"`
-	Model        string `json:"model"`
-	TokensIn     int    `json:"tokens_in"`
-	TokensOut    int    `json:"tokens_out"`
-	TokensCached   int    `json:"tokens_cached"`
-	TokensNewCache int    `json:"tokens_new_cache"`
-	TokensTotal    int    `json:"tokens_total"`
-	RequestCount int    `json:"request_count"`
+	Date            string `json:"date"`
+	AccountID       string `json:"account_id"`
+	Username        string `json:"username"`
+	Model           string `json:"model"`
+	ReasoningEffort string `json:"reasoning_effort"`
+	TokensIn        int    `json:"tokens_in"`
+	TokensOut       int    `json:"tokens_out"`
+	TokensCached    int    `json:"tokens_cached"`
+	TokensNewCache  int    `json:"tokens_new_cache"`
+	TokensTotal     int    `json:"tokens_total"`
+	RequestCount    int    `json:"request_count"`
 }
 
 // AccountSummary is returned by the accounts listing endpoint.
@@ -30,15 +31,21 @@ type AccountSummary struct {
 	Username  string `json:"username"`
 }
 
-// aggKey is the map key for aggregating stats by date/account/model.
+// aggKey is the map key for aggregating stats by date/account/model/effort.
 type aggKey struct {
-	date, accountID, model string
+	date, accountID, model, reasoningEffort string
 }
 
 // Query reads JSONL files and returns aggregated daily stats.
 func Query(baseDir, accountID, model string, start, end time.Time) ([]AggregatedEntry, error) {
+	return QueryWithReasoningEffort(baseDir, accountID, model, "", start, end)
+}
+
+// QueryWithReasoningEffort reads JSONL files and optionally filters by effort.
+func QueryWithReasoningEffort(baseDir, accountID, model, reasoningEffort string, start, end time.Time) ([]AggregatedEntry, error) {
 	agg := make(map[aggKey]*AggregatedEntry)
-	var lastUsername map[string]string = make(map[string]string)
+	lastUsername := make(map[string]string)
+	reasoningEffort = strings.ToLower(strings.TrimSpace(reasoningEffort))
 
 	// Determine which account dirs to scan
 	var accountDirs []string
@@ -92,7 +99,7 @@ func Query(baseDir, accountID, model string, start, end time.Time) ([]Aggregated
 					}
 				}
 
-				readJSONLFile(filepath.Join(yearDir, f.Name()), start, end, model, agg, lastUsername)
+				readJSONLFile(filepath.Join(yearDir, f.Name()), start, end, model, reasoningEffort, agg, lastUsername)
 			}
 		}
 	}
@@ -108,12 +115,18 @@ func Query(baseDir, accountID, model string, start, end time.Time) ([]Aggregated
 		if result[i].Date != result[j].Date {
 			return result[i].Date < result[j].Date
 		}
-		return result[i].AccountID < result[j].AccountID
+		if result[i].AccountID != result[j].AccountID {
+			return result[i].AccountID < result[j].AccountID
+		}
+		if result[i].Model != result[j].Model {
+			return result[i].Model < result[j].Model
+		}
+		return result[i].ReasoningEffort < result[j].ReasoningEffort
 	})
 	return result, nil
 }
 
-func readJSONLFile(path string, start, end time.Time, modelFilter string, agg map[aggKey]*AggregatedEntry, usernames map[string]string) {
+func readJSONLFile(path string, start, end time.Time, modelFilter, reasoningEffortFilter string, agg map[aggKey]*AggregatedEntry, usernames map[string]string) {
 	f, err := os.Open(path)
 	if err != nil {
 		return
@@ -135,15 +148,20 @@ func readJSONLFile(path string, start, end time.Time, modelFilter string, agg ma
 		if modelFilter != "" && e.Model != modelFilter {
 			continue
 		}
+		e.ReasoningEffort = ClassifyReasoningEffort(e.ReasoningEffort, nil)
+		if reasoningEffortFilter != "" && e.ReasoningEffort != reasoningEffortFilter {
+			continue
+		}
 
-		k := aggKey{day, e.AccountID, e.Model}
+		k := aggKey{day, e.AccountID, e.Model, e.ReasoningEffort}
 		entry, ok := agg[k]
 		if !ok {
 			entry = &AggregatedEntry{
-				Date:      day,
-				AccountID: e.AccountID,
-				Username:  e.Username,
-				Model:     e.Model,
+				Date:            day,
+				AccountID:       e.AccountID,
+				Username:        e.Username,
+				Model:           e.Model,
+				ReasoningEffort: e.ReasoningEffort,
 			}
 			agg[k] = entry
 		}

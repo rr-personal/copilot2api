@@ -117,6 +117,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	route := "chat_completions" // default fallback
 	var usage tokenUsage
+	reasoningEffort := requestedReasoningEffort(anthropicReq)
 	accountID, username := h.accountInfo()
 	clientIP := reqctx.GetClientIP(r)
 	affinityAccount, affinityHit, hasCache, isGateway := reqctx.GetAffinity(r.Context())
@@ -128,6 +129,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"model", anthropicReq.Model,
 			"stream", anthropicReq.Stream,
 			"messages", len(anthropicReq.Messages),
+			"reasoning_effort", reasoningEffort,
 			"route", route,
 			"duration_ms", time.Since(start).Milliseconds(),
 			"account_id", accountID,
@@ -147,18 +149,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.Info(logMsg, attrs...)
 		if h.StatsRecorder != nil && (usage.In+usage.Cached+usage.NewCache+usage.Out) > 0 {
 			h.StatsRecorder.Record(stats.Entry{
-				Timestamp:      time.Now(),
-				AccountID:      accountID,
-				Username:       username,
-				Model:          anthropicReq.Model,
-				Endpoint:       "/v1/messages",
-				Route:          route,
-				TokensIn:       usage.In + usage.Cached + usage.NewCache,
-				TokensOut:      usage.Out,
-				TokensCached:   usage.Cached,
-				TokensNewCache: usage.NewCache,
-				TokensTotal:    usage.In + usage.Cached + usage.NewCache + usage.Out,
-				DurationMs:     time.Since(start).Milliseconds(),
+				Timestamp:       time.Now(),
+				AccountID:       accountID,
+				Username:        username,
+				Model:           anthropicReq.Model,
+				ReasoningEffort: reasoningEffort,
+				Endpoint:        "/v1/messages",
+				Route:           route,
+				TokensIn:        usage.In + usage.Cached + usage.NewCache,
+				TokensOut:       usage.Out,
+				TokensCached:    usage.Cached,
+				TokensNewCache:  usage.NewCache,
+				TokensTotal:     usage.In + usage.Cached + usage.NewCache + usage.Out,
+				DurationMs:      time.Since(start).Milliseconds(),
 			})
 		}
 	}()
@@ -206,6 +209,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.handleViaChatCompletions(w, r, anthropicReq, originalModel, &usage)
+}
+
+func requestedReasoningEffort(req AnthropicMessagesRequest) string {
+	var explicit string
+	if req.OutputConfig != nil {
+		explicit = req.OutputConfig.Effort
+	}
+	var budget *int
+	if req.Thinking != nil {
+		budget = req.Thinking.BudgetTokens
+	}
+	return stats.ClassifyReasoningEffort(explicit, budget)
 }
 
 // setUpstreamModelHeader records the real upstream model id on a non-standard

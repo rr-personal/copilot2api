@@ -7,6 +7,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/whtsky/copilot2api/internal/copilot"
 	"github.com/whtsky/copilot2api/internal/models"
 	"github.com/whtsky/copilot2api/internal/upstream"
+	"github.com/whtsky/copilot2api/stats"
 )
 
 func TestAddCopilotHeaders(t *testing.T) {
@@ -27,14 +30,14 @@ func TestAddCopilotHeaders(t *testing.T) {
 
 	// Test required headers
 	expectedHeaders := map[string]string{
-		"Authorization":         "Bearer " + token,
-		"User-Agent":            copilot.CopilotUserAgent,
-		"Editor-Version":        copilot.EditorVersion,
-		"Editor-Plugin-Version": copilot.EditorPluginVersion,
+		"Authorization":          "Bearer " + token,
+		"User-Agent":             copilot.CopilotUserAgent,
+		"Editor-Version":         copilot.EditorVersion,
+		"Editor-Plugin-Version":  copilot.EditorPluginVersion,
 		"Copilot-Integration-Id": "vscode-chat",
-		"Openai-Intent":         "conversation-agent",
-		"Content-Type":          "application/json",
-		"X-Github-Api-Version":  "2025-04-01",
+		"Openai-Intent":          "conversation-agent",
+		"Content-Type":           "application/json",
+		"X-Github-Api-Version":   "2025-04-01",
 	}
 
 	for header, expectedValue := range expectedHeaders {
@@ -87,9 +90,9 @@ func TestCollectForwardHeaders(t *testing.T) {
 
 func TestIsStreamingRequest_Handler(t *testing.T) {
 	tests := []struct {
-		name      string
-		body      string
-		expected  bool
+		name     string
+		body     string
+		expected bool
 	}{
 		{
 			name:     "streaming request",
@@ -246,6 +249,99 @@ func TestHandler_HandlePassthrough(t *testing.T) {
 	}
 	if got["object"] != "chat.completion" {
 		t.Fatalf("expected object 'chat.completion', got %v", got["object"])
+	}
+}
+
+func TestHandler_RecordsReasoningEffort(t *testing.T) {
+	fakeUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/responses" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"resp-nonstream","object":"response","model":"gpt-5","status":"completed","output":[],"usage":{"input_tokens":8,"output_tokens":2}}`))
+			return
+		}
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		var request struct {
+			Stream bool `json:"stream"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode upstream request: %v", err)
+		}
+		if request.Stream {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl-stream\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-5\",\"choices\":[],\"usage\":{\"prompt_tokens\":8,\"completion_tokens\":2,\"total_tokens\":10}}\n\ndata: [DONE]\n\n"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-nonstream","object":"chat.completion","model":"gpt-5","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10}}`))
+	}))
+	defer fakeUpstream.Close()
+
+	tests := []struct {
+		name string
+		path string
+		body string
+		want string
+	}{
+		{
+			name: "non-streaming explicit effort",
+			path: "/v1/chat/completions",
+			body: `{"model":"gpt-5","messages":[],"reasoning_effort":"Minimal","stream":false}`,
+			want: "minimal",
+		},
+		{
+			name: "streaming budget fallback",
+			path: "/v1/chat/completions",
+			body: `{"model":"gpt-5","messages":[],"thinking_budget":16000,"stream":true}`,
+			want: "high",
+		},
+		{
+			name: "responses explicit effort",
+			path: "/v1/responses",
+			body: `{"model":"gpt-5","input":[],"reasoning":{"effort":"none"},"stream":false}`,
+			want: "none",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			recorder := stats.NewRecorder(dir)
+			handler := &Handler{
+				upstream:      upstream.NewClient(&stubTokenProvider{baseURL: fakeUpstream.URL}, nil),
+				StatsRecorder: recorder,
+			}
+
+			req := httptest.NewRequest("POST", tt.path, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			recorder.Close()
+
+			if resp.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body: %s", resp.Code, resp.Body.String())
+			}
+			paths, err := filepath.Glob(filepath.Join(dir, "*", "*.jsonl"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(paths) != 1 {
+				t.Fatalf("stats files = %v, want one", paths)
+			}
+			data, err := os.ReadFile(paths[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			var entry stats.Entry
+			if err := json.Unmarshal(bytes.TrimSpace(data), &entry); err != nil {
+				t.Fatalf("decode stats entry: %v", err)
+			}
+			if entry.ReasoningEffort != tt.want {
+				t.Errorf("ReasoningEffort = %q, want %q", entry.ReasoningEffort, tt.want)
+			}
+		})
 	}
 }
 

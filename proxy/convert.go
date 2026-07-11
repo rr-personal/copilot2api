@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/whtsky/copilot2api/internal/types"
+	"github.com/whtsky/copilot2api/stats"
 )
 
 // --- Chat Completions → Responses ---
@@ -77,10 +78,10 @@ func ConvertChatToResponsesRequest(req types.OpenAIChatCompletionsRequest) types
 		result.MaxOutputTokens = &v
 	}
 
-	// Thinking budget → reasoning
-	if req.ThinkingBudget != nil {
+	// Explicit reasoning effort takes precedence over the legacy budget.
+	if strings.TrimSpace(req.ReasoningEffort) != "" || req.ThinkingBudget != nil {
 		result.Reasoning = &types.ResponseReasoning{
-			Effort:  thinkingBudgetToEffort(*req.ThinkingBudget),
+			Effort:  stats.ClassifyReasoningEffort(req.ReasoningEffort, req.ThinkingBudget),
 			Summary: "detailed",
 		}
 	}
@@ -1154,9 +1155,9 @@ func ConvertChatChunkToResponsesStreamEvents(chunk types.OpenAIChatCompletionChu
 			})
 		}
 		events = append(events, types.ResponseStreamEvent{
-			Type:         "response.reasoning_summary_text.delta",
-			OutputIndex:  state.ReasoningOutputIndex,
-			Delta:        *delta.ReasoningText,
+			Type:        "response.reasoning_summary_text.delta",
+			OutputIndex: state.ReasoningOutputIndex,
+			Delta:       *delta.ReasoningText,
 		})
 	}
 
@@ -1218,20 +1219,20 @@ func ConvertChatChunkToResponsesStreamEvents(chunk types.OpenAIChatCompletionChu
 
 // ChatStreamConvertState tracks state during ChatCompletions→Responses stream conversion.
 type ChatStreamConvertState struct {
-	CreatedSent        bool
-	ID                 string
-	Model              string
-	OutputItemStarted  bool
-	CurrentOutputIndex int
-	NextOutputIndex    int
+	CreatedSent         bool
+	ID                  string
+	Model               string
+	OutputItemStarted   bool
+	CurrentOutputIndex  int
+	NextOutputIndex     int
 	ToolCallOutputIndex map[int]int
-	Finished           bool
+	Finished            bool
 	// Reasoning tracking
 	ReasoningStarted     bool
 	ReasoningOutputIndex int
 	// Deferred termination fields
-	FinishSeen   bool             // finish_reason was seen
-	FinishStatus string           // "completed" or "incomplete"
+	FinishSeen   bool               // finish_reason was seen
+	FinishStatus string             // "completed" or "incomplete"
 	PendingUsage *types.OpenAIUsage // usage captured from usage-only chunk
 }
 

@@ -41,6 +41,31 @@ func TestExtractModelField(t *testing.T) {
 	}
 }
 
+func TestExtractReasoningEffort(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		body     string
+		want     string
+	}{
+		{name: "responses explicit", endpoint: "/responses", body: `{"reasoning":{"effort":"xhigh"}}`, want: "xhigh"},
+		{name: "responses arbitrary tier", endpoint: "/responses", body: `{"reasoning":{"effort":" Custom-Tier "}}`, want: "custom-tier"},
+		{name: "chat explicit", endpoint: "/chat/completions", body: `{"reasoning_effort":"minimal"}`, want: "minimal"},
+		{name: "chat explicit overrides budget", endpoint: "/chat/completions", body: `{"reasoning_effort":"XHIGH","thinking_budget":1}`, want: "xhigh"},
+		{name: "chat budget fallback", endpoint: "/chat/completions", body: `{"thinking_budget":16000}`, want: "high"},
+		{name: "missing effort", endpoint: "/chat/completions", body: `{}`, want: "unspecified"},
+		{name: "invalid JSON", endpoint: "/responses", body: `{broken`, want: "unspecified"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := extractReasoningEffort(tt.endpoint, []byte(tt.body)); got != tt.want {
+				t.Errorf("extractReasoningEffort() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // --- resolveTargetEndpoint tests ---
 
 func TestResolveTargetEndpoint_NilModelsCache(t *testing.T) {
@@ -211,6 +236,10 @@ func TestSmartRouting_ChatToResponsesNonStreaming(t *testing.T) {
 			if req["model"] != "resp-only-model" {
 				t.Errorf("model = %v, want resp-only-model", req["model"])
 			}
+			reasoning, ok := req["reasoning"].(map[string]interface{})
+			if !ok || reasoning["effort"] != "xhigh" {
+				t.Errorf("reasoning effort = %v, want xhigh", reasoning["effort"])
+			}
 			// Return a Responses API result
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"id":     "resp_result_1",
@@ -244,7 +273,7 @@ func TestSmartRouting_ChatToResponsesNonStreaming(t *testing.T) {
 	}
 
 	// Send a Chat Completions request for a model that only supports /responses
-	chatBody := `{"model":"resp-only-model","messages":[{"role":"user","content":"hi"}],"stream":false}`
+	chatBody := `{"model":"resp-only-model","messages":[{"role":"user","content":"hi"}],"reasoning_effort":"xhigh","thinking_budget":1,"stream":false}`
 	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(chatBody))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -290,9 +319,9 @@ func TestSmartRouting_ResponsesToChatNonStreaming(t *testing.T) {
 			// Return Chat Completions response
 			text := "Hello from chat"
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"id":      "chatcmpl_1",
-				"object":  "chat.completion",
-				"model":   "chat-only-model",
+				"id":     "chatcmpl_1",
+				"object": "chat.completion",
+				"model":  "chat-only-model",
 				"choices": []map[string]interface{}{
 					{
 						"index":         0,

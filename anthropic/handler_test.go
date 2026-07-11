@@ -2,10 +2,20 @@ package anthropic
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/whtsky/copilot2api/internal/models"
+	"github.com/whtsky/copilot2api/internal/upstream"
+	"github.com/whtsky/copilot2api/stats"
 )
 
 func TestReadSSEEventMultiLineData(t *testing.T) {
@@ -47,6 +57,148 @@ func TestReadSSEEventEOFWithoutData(t *testing.T) {
 	if event != nil {
 		t.Fatalf("event = %#v, want nil", event)
 	}
+}
+
+func TestRequestedReasoningEffort(t *testing.T) {
+	tests := []struct {
+		name string
+		req  AnthropicMessagesRequest
+		want string
+	}{
+		{name: "unspecified", want: "unspecified"},
+		{
+			name: "explicit effort is normalized",
+			req:  AnthropicMessagesRequest{OutputConfig: &AnthropicOutputConfig{Effort: " XHIGH "}},
+			want: "xhigh",
+		},
+		{
+			name: "explicit effort overrides budget",
+			req: AnthropicMessagesRequest{
+				OutputConfig: &AnthropicOutputConfig{Effort: "max"},
+				Thinking:     &AnthropicThinking{BudgetTokens: intPtr(4000)},
+			},
+			want: "max",
+		},
+		{
+			name: "empty explicit effort falls back to budget",
+			req: AnthropicMessagesRequest{
+				OutputConfig: &AnthropicOutputConfig{},
+				Thinking:     &AnthropicThinking{BudgetTokens: intPtr(8000)},
+			},
+			want: "medium",
+		},
+		{
+			name: "thinking without budget is unspecified",
+			req:  AnthropicMessagesRequest{Thinking: &AnthropicThinking{Type: "adaptive"}},
+			want: "unspecified",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := requestedReasoningEffort(tt.req); got != tt.want {
+				t.Fatalf("requestedReasoningEffort() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHandlerRecordsReasoningEffort(t *testing.T) {
+	fakeUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/models":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": "claude-test", "supported_endpoints": []string{"/v1/messages"}},
+				},
+			})
+		case "/v1/messages":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"id":"msg_test",
+				"type":"message",
+				"role":"assistant",
+				"model":"claude-test",
+				"content":[{"type":"text","text":"ok"}],
+				"stop_reason":"end_turn",
+				"stop_sequence":null,
+				"usage":{"input_tokens":10,"cache_read_input_tokens":2,"cache_creation_input_tokens":1,"output_tokens":5}
+			}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer fakeUpstream.Close()
+
+	tp := &statsTestTokenProvider{
+		baseURL:   fakeUpstream.URL,
+		accountID: "acc-anthropic",
+		username:  "alice",
+	}
+	upstreamClient := upstream.NewClient(tp, nil)
+	modelsCache := models.NewCache(func() *upstream.Client { return upstreamClient }, time.Minute)
+	statsDir := t.TempDir()
+	recorder := stats.NewRecorder(statsDir)
+	handler := NewHandler(tp, nil, modelsCache)
+	handler.StatsRecorder = recorder
+
+	body := `{
+		"model":"claude-test",
+		"max_tokens":16,
+		"messages":[{"role":"user","content":"hello"}],
+		"thinking":{"type":"enabled","budget_tokens":4000},
+		"output_config":{"effort":"max"}
+	}`
+	request := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(body))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	recorder.Close()
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", response.Code, response.Body.String())
+	}
+	paths, err := filepath.Glob(filepath.Join(statsDir, "acc-anthropic", "*", "*.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("stats files = %v, want one", paths)
+	}
+	data, err := os.ReadFile(paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entry stats.Entry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		t.Fatalf("decode stats entry: %v", err)
+	}
+	if entry.ReasoningEffort != "max" {
+		t.Errorf("ReasoningEffort = %q, want max", entry.ReasoningEffort)
+	}
+	if entry.AccountID != "acc-anthropic" || entry.Username != "alice" {
+		t.Errorf("account = (%q, %q), want (acc-anthropic, alice)", entry.AccountID, entry.Username)
+	}
+	if entry.TokensIn != 13 || entry.TokensOut != 5 || entry.TokensTotal != 18 {
+		t.Errorf("token usage = (%d, %d, %d), want (13, 5, 18)", entry.TokensIn, entry.TokensOut, entry.TokensTotal)
+	}
+}
+
+type statsTestTokenProvider struct {
+	baseURL   string
+	accountID string
+	username  string
+}
+
+func (p *statsTestTokenProvider) GetToken(context.Context) (string, error) {
+	return "test-token", nil
+}
+
+func (p *statsTestTokenProvider) GetBaseURL() string {
+	return p.baseURL
+}
+
+func (p *statsTestTokenProvider) GetAccountInfo() (string, string) {
+	return p.accountID, p.username
 }
 
 func TestNormalizeNativeMessagesBody_RemovesCacheControlScope(t *testing.T) {

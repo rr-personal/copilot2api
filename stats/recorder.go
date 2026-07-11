@@ -13,18 +13,19 @@ import (
 
 // Entry represents a single usage record.
 type Entry struct {
-	Timestamp     time.Time `json:"timestamp"`
-	AccountID     string    `json:"account_id"`
-	Username      string    `json:"username"`
-	Model         string    `json:"model"`
-	Endpoint      string    `json:"endpoint"`
-	Route         string    `json:"route"`
-	TokensIn      int       `json:"tokens_in"`
-	TokensOut     int       `json:"tokens_out"`
-	TokensCached  int       `json:"tokens_cached"`
-	TokensNewCache int      `json:"tokens_new_cache"`
-	TokensTotal   int       `json:"tokens_total"`
-	DurationMs    int64     `json:"duration_ms"`
+	Timestamp       time.Time `json:"timestamp"`
+	AccountID       string    `json:"account_id"`
+	Username        string    `json:"username"`
+	Model           string    `json:"model"`
+	ReasoningEffort string    `json:"reasoning_effort"`
+	Endpoint        string    `json:"endpoint"`
+	Route           string    `json:"route"`
+	TokensIn        int       `json:"tokens_in"`
+	TokensOut       int       `json:"tokens_out"`
+	TokensCached    int       `json:"tokens_cached"`
+	TokensNewCache  int       `json:"tokens_new_cache"`
+	TokensTotal     int       `json:"tokens_total"`
+	DurationMs      int64     `json:"duration_ms"`
 }
 
 // Recorder appends usage entries to JSONL files on disk.
@@ -104,6 +105,7 @@ func (r *Recorder) Record(entry Entry) {
 	if entry.Timestamp.IsZero() {
 		entry.Timestamp = time.Now()
 	}
+	entry.ReasoningEffort = ClassifyReasoningEffort(entry.ReasoningEffort, nil)
 	path := r.filePath(entry)
 
 	data, err := json.Marshal(entry)

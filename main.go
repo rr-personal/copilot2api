@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -28,6 +29,30 @@ import (
 )
 
 var version = "dev"
+var commit = "dev"
+
+func buildCommit() string {
+	if commit != "" && commit != "dev" {
+		return shortCommit(commit)
+	}
+
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, setting := range info.Settings {
+			if setting.Key == "vcs.revision" && setting.Value != "" {
+				return shortCommit(setting.Value)
+			}
+		}
+	}
+
+	return "dev"
+}
+
+func shortCommit(value string) string {
+	if len(value) > 8 {
+		return value[:8]
+	}
+	return value
+}
 
 func main() {
 	var (
@@ -262,7 +287,7 @@ func main() {
 
 	// Create control plane server
 	adminToken := os.Getenv("ADMIN_TOKEN")
-	controlServer := control.NewServer(accountManager, adminToken, statsDir, pricingCache, modelsCache)
+	controlServer := control.NewServer(accountManager, adminToken, statsDir, pricingCache, modelsCache, buildCommit())
 	controlHTTP := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", *host, *controlPort),
 		ReadHeaderTimeout: 10 * time.Second,

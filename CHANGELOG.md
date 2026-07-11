@@ -15,6 +15,7 @@
 - Dashboard: multi-select dimensions (By Model + By Account), month/quarter range pickers, manual refresh button, configurable auto-refresh (off/1m/2m/5m/30m/1h) stored in localStorage
 - Dashboard: API key required for usage data (stored in localStorage), bar top labels with overlap avoidance, bottom dimension labels at 60°
 - Add reasoning-effort usage tracking and filtering, including a combinable dashboard dimension for recorded OpenAI-compatible and Anthropic traffic
+- Dashboard: show the running binary's short git commit next to the page title
 
 ### Docs
 
@@ -24,6 +25,7 @@
 
 - Serve the dashboard's Chart.js dependency from the embedded control server assets so offline or restricted workstations do not need CDN access
 - Render dashboard filter values safely so model, account, and reasoning-effort labels cannot corrupt the controls
+- Publish Docker images to the current GitHub repository's container package instead of the previous owner's package
 
 ## [0.3.1] - 2026-04-26
 

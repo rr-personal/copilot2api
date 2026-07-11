@@ -14,6 +14,7 @@
 - Dynamic model pricing: fetches LiteLLM pricing JSON on startup and daily at 3:00 AM UTC, cached to disk. Supports fuzzy model name matching (provider prefixes, version normalization, suffix stripping)
 - Dashboard: multi-select dimensions (By Model + By Account), month/quarter range pickers, manual refresh button, configurable auto-refresh (off/1m/2m/5m/30m/1h) stored in localStorage
 - Dashboard: API key required for usage data (stored in localStorage), bar top labels with overlap avoidance, bottom dimension labels at 60°
+- Dashboard: show the running binary's short git commit next to the page title
 
 ### Docs
 

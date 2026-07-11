@@ -40,9 +40,9 @@ jobs:
         id: version
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
-            echo "ldflags=-s -w -X main.version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "ldflags=-s -w -X main.version=${{ github.ref_name }} -X main.commit=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           else
-            echo "ldflags=-s -w" >> "$GITHUB_OUTPUT"
+            echo "ldflags=-s -w -X main.commit=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           fi
       - name: Build all platforms
         run: |

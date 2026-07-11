@@ -1,9 +1,10 @@
 FROM golang:1.26-alpine AS build
+ARG COMMIT_SHA=dev
 WORKDIR /src
 COPY go.mod ./
 RUN go mod download || true
 COPY . .
-RUN go mod tidy && CGO_ENABLED=0 go build -ldflags="-s -w" -o /copilot2api .
+RUN go mod tidy && CGO_ENABLED=0 go build -ldflags="-s -w -X main.commit=${COMMIT_SHA}" -o /copilot2api .
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates

@@ -1,11 +1,13 @@
 package control
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"html"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -41,6 +43,7 @@ type Server struct {
 	statsDir     string
 	pricingCache *stats.PricingCache
 	modelsCache  *models.Cache
+	commit       string
 	mu           sync.Mutex
 	flows        map[string]*pendingFlow
 }
@@ -59,13 +62,19 @@ type pendingFlow struct {
 	cancel          context.CancelFunc
 }
 
-func NewServer(am *auth.AccountManager, adminToken string, statsDir string, pricingCache *stats.PricingCache, modelsCache *models.Cache) *Server {
+func NewServer(am *auth.AccountManager, adminToken string, statsDir string, pricingCache *stats.PricingCache, modelsCache *models.Cache, commits ...string) *Server {
+	commit := "dev"
+	if len(commits) > 0 && commits[0] != "" {
+		commit = commits[0]
+	}
+
 	return &Server{
 		am:           am,
 		adminToken:   adminToken,
 		statsDir:     statsDir,
 		pricingCache: pricingCache,
 		modelsCache:  modelsCache,
+		commit:       commit,
 		flows:        make(map[string]*pendingFlow),
 	}
 }
@@ -406,7 +415,8 @@ func (s *Server) handleUsagePricing(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(dashboardHTML)
+	page := bytes.ReplaceAll(dashboardHTML, []byte("{{BUILD_COMMIT}}"), []byte(html.EscapeString(s.commit)))
+	w.Write(page)
 }
 
 func (s *Server) handleChartJS(w http.ResponseWriter, r *http.Request) {

@@ -11,6 +11,9 @@
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 1.5rem; min-width: 1400px; }
 .container { max-width: 1200px; margin: 0 auto; }
 h1 { margin-bottom: 1rem; font-size: 1.5rem; }
+.title-bar { display: flex; align-items: baseline; gap: 0.65rem; margin-bottom: 1rem; }
+.title-bar h1 { margin-bottom: 0; }
+.commit { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.72rem; }
 .controls { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.8rem; align-items: center; }
 .controls .sep { width: 1px; height: 1.5rem; background: var(--border); margin: 0 0.3rem; }
 .controls .lbl { font-size: 0.75rem; color: var(--muted); margin-right: 0.2rem; }
@@ -38,7 +41,7 @@ canvas { width: 100% !important; }
 </style>
 </head>
 <body>
-<div class="container" id="app"></div>
+<div class="container" id="app" data-commit="{{BUILD_COMMIT}}"></div>
 <script>
 const app = document.getElementById('app');
 let chart = null;
@@ -47,7 +50,7 @@ let filterModel = localStorage.getItem('c2a_filterModel') || '', filterAccount =
 let rawData = [];
 
 async function showDashboard() {
-  app.innerHTML = `<h1>📊 LLM Gateway Usage</h1>
+  app.innerHTML = `<div class="title-bar"><h1>📊 LLM Gateway Usage</h1><span class="commit" id="buildCommit"></span></div>
 <div class="token-bar">
   <span class="lbl">API Key:</span>
   <input type="password" id="apiToken" placeholder="Enter control plane admin token" value="${localStorage.getItem('c2a_token') || ''}">
@@ -84,6 +87,7 @@ async function showDashboard() {
 </div>
 <div class="cards" id="cards"></div>
 <div class="chart-container"><canvas id="chart"></canvas></div>`;
+  document.getElementById('buildCommit').textContent = `commit ${app.dataset.commit}`;
 
   // populate month/quarter pickers FIRST, then attach handlers
   const now = new Date();
